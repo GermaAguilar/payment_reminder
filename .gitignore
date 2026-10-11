@@ -1,0 +1,8 @@
+# Configuración local: contiene la contraseña de aplicación de Gmail
+payment_reminder_config.json
+
+# Recordatorios exportados
+recordatorio_pagos_*.txt
+
+__pycache__/
+*.pyc

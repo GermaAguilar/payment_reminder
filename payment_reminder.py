@@ -1,8 +1,8 @@
 """
-Recordatorio de Pagos Pro - Versión Refactorizada
-Aplicación profesional para gestionar pagos pendientes y enviar recordatorios por correo.
+Recordatorio de Pagos
+Aplicación de escritorio para gestionar pagos pendientes y enviar recordatorios por correo.
 
-Autor: Sistema de Recordatorios
+Autor: Germain Aguilar
 Versión: 2.0
 """
 
