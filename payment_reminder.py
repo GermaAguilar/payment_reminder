@@ -20,28 +20,77 @@ from tkinter import ttk, messagebox, scrolledtext
 from tkcalendar import DateEntry
 import webbrowser
 import sv_ttk
+import keyring
+import keyring.errors
 
 
 # ======================== CAPA DE DATOS ========================
 
+class PasswordStore:
+    """
+    Guarda la contraseña de aplicación en el almacén de credenciales del
+    sistema operativo (Administrador de credenciales de Windows, Llavero de
+    macOS o Secret Service en Linux). La contraseña nunca se escribe en el
+    archivo de configuración.
+    """
+
+    SERVICE = "RecordatorioPagos"
+
+    @staticmethod
+    def get(email: str) -> str:
+        """Retorna la contraseña guardada para ese correo, o cadena vacía."""
+        if not email:
+            return ""
+        try:
+            return keyring.get_password(PasswordStore.SERVICE, email) or ""
+        except keyring.errors.KeyringError as e:
+            print(f"No se pudo leer la contraseña del almacén del sistema: {e}")
+            return ""
+
+    @staticmethod
+    def set(email: str, password: str) -> bool:
+        """Guarda la contraseña. Retorna False si el sistema no lo permite."""
+        if not email or not password:
+            return False
+        try:
+            keyring.set_password(PasswordStore.SERVICE, email, password)
+            return True
+        except keyring.errors.KeyringError as e:
+            print(f"No se pudo guardar la contraseña en el almacén del sistema: {e}")
+            return False
+
+    @staticmethod
+    def delete(email: str) -> None:
+        """Elimina la contraseña guardada para ese correo, si existe."""
+        if not email:
+            return
+        try:
+            keyring.delete_password(PasswordStore.SERVICE, email)
+        except keyring.errors.KeyringError:
+            pass  # No había contraseña guardada o el almacén no está disponible
+
+
 class DataManager:
     """Gestiona la persistencia y manipulación de datos de servicios."""
-    
+
     def __init__(self, config_file: str = "payment_reminder_config.json"):
         """
         Inicializa el gestor de datos.
-        
+
         Args:
             config_file: Ruta del archivo de configuración JSON
         """
         self.config_file = config_file
         self.servicios: List[Tuple[str, str, str]] = []
         self.config: Dict = {}
-        
+        # Correo con el que se guardó la contraseña la última vez
+        self._email_guardado: str = ""
+
     def load_config(self) -> Dict:
         """
-        Carga la configuración desde el archivo JSON.
-        
+        Carga la configuración desde el archivo JSON. La contraseña se lee
+        del almacén de credenciales del sistema, no del archivo.
+
         Returns:
             Diccionario con la configuración cargada
         """
@@ -49,14 +98,47 @@ class DataManager:
             if os.path.exists(self.config_file):
                 with open(self.config_file, "r", encoding="utf-8") as f:
                     self.config = json.load(f)
-                    self.servicios = self.config.get("servicios", [])
-                    return self.config
+                self.servicios = self.config.get("servicios", [])
+                email = self.config.get("email_emisor", "")
+                pendiente = self._migrate_plaintext_password(email)
+                self._email_guardado = email
+                self.config["password"] = pendiente or PasswordStore.get(email)
+                return self.config
             else:
                 return self._get_default_config()
         except (json.JSONDecodeError, IOError) as e:
             print(f"Error al cargar configuración: {e}")
             return self._get_default_config()
-    
+
+    def _migrate_plaintext_password(self, email: str) -> str:
+        """
+        Las versiones anteriores guardaban la contraseña en el JSON. Si queda
+        una ahí, se pasa al almacén del sistema y se borra del archivo.
+
+        Returns:
+            La contraseña antigua si no se pudo mover al almacén (para seguir
+            usándola en esta sesión), o cadena vacía en cualquier otro caso
+        """
+        antigua = self.config.pop("password", "")
+        if not antigua:
+            return ""
+        if not PasswordStore.set(email, antigua):
+            # No se pudo mover: se deja el archivo como estaba para no perderla
+            return antigua
+        self._write_config_file()
+        return ""
+
+    def _write_config_file(self) -> bool:
+        """Escribe la configuración en disco, siempre sin la contraseña."""
+        datos = {k: v for k, v in self.config.items() if k != "password"}
+        try:
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump(datos, f, indent=2, ensure_ascii=False)
+            return True
+        except IOError as e:
+            print(f"Error al guardar configuración: {e}")
+            return False
+
     def _get_default_config(self) -> Dict:
         """Retorna la configuración por defecto."""
         return {
@@ -70,14 +152,15 @@ class DataManager:
     def save_config(self, email_emisor: str, password: str, 
                    email_receptor: str, theme: str) -> bool:
         """
-        Guarda la configuración en el archivo JSON.
-        
+        Guarda la configuración en el archivo JSON y la contraseña en el
+        almacén de credenciales del sistema.
+
         Args:
             email_emisor: Correo del emisor
             password: Contraseña de aplicación
             email_receptor: Correo del receptor
             theme: Tema actual (light/dark)
-            
+
         Returns:
             True si se guardó correctamente, False en caso contrario
         """
@@ -88,14 +171,18 @@ class DataManager:
             "email_receptor": email_receptor,
             "theme": theme
         }
-        
-        try:
-            with open(self.config_file, "w", encoding="utf-8") as f:
-                json.dump(self.config, f, indent=2, ensure_ascii=False)
-            return True
-        except IOError as e:
-            print(f"Error al guardar configuración: {e}")
-            return False
+
+        # Si cambió el correo emisor, la contraseña del anterior ya no sirve
+        if self._email_guardado and self._email_guardado != email_emisor:
+            PasswordStore.delete(self._email_guardado)
+
+        if password:
+            PasswordStore.set(email_emisor, password)
+        else:
+            PasswordStore.delete(email_emisor)
+        self._email_guardado = email_emisor
+
+        return self._write_config_file()
     
     def add_servicio(self, nombre: str, fecha: str, monto: str) -> bool:
         """

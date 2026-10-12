@@ -1,4 +1,4 @@
-# Configuración local: contiene la contraseña de aplicación de Gmail
+# Configuración local: servicios y correos del usuario
 payment_reminder_config.json
 
 # Recordatorios exportados

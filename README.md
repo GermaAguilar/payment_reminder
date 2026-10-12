@@ -39,10 +39,14 @@ La aplicación envía desde una cuenta de Gmail usando una **contraseña de apli
 
 ## Dónde se guardan los datos
 
-Todo queda en tu equipo, en el archivo `payment_reminder_config.json`, junto al script. Nada se sube a la nube.
+Todo queda en tu equipo. Nada se sube a la nube.
 
-> [!WARNING]
-> La contraseña de aplicación se guarda en ese archivo **sin cifrar**. No lo compartas ni lo subas a un repositorio (ya está en `.gitignore`). Si crees que alguien lo vio, revoca la contraseña desde tu cuenta de Google y genera otra.
+- **Servicios, correos y tema:** en el archivo `payment_reminder_config.json`, junto al script.
+- **Contraseña de aplicación:** en el almacén de credenciales del sistema operativo (Administrador de credenciales en Windows, Llavero en macOS, Secret Service en Linux), mediante la librería `keyring`. Nunca se escribe en el archivo de configuración.
+
+Si vienes de una versión anterior, que guardaba la contraseña en el JSON, la aplicación la pasa al almacén del sistema y la borra del archivo la primera vez que se abre.
+
+Si el sistema no tiene un almacén de credenciales disponible, la aplicación sigue funcionando, pero no recuerda la contraseña y hay que escribirla en cada sesión.
 
 ## Si algo falla
 
@@ -56,6 +60,7 @@ Todo queda en tu equipo, en el archivo `payment_reminder_config.json`, junto al 
 
 `payment_reminder.py` está organizado en capas:
 
+- `PasswordStore`: guarda y lee la contraseña en el almacén de credenciales del sistema.
 - `DataManager`: lee y guarda la configuración y los servicios.
 - `EmailService`: conexión y envío por SMTP.
 - `ReminderGenerator`: arma el texto del recordatorio.
